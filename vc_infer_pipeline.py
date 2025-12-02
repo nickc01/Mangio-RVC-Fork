@@ -368,7 +368,7 @@ class VC(object):
         ) + 1
         f0_mel[f0_mel <= 1] = 1
         f0_mel[f0_mel > 255] = 255
-        f0_coarse = np.rint(f0_mel).astype(np.int)
+        f0_coarse = np.rint(f0_mel).astype(int)
 
         return f0_coarse, f0bak  # 1-0
 
@@ -407,7 +407,7 @@ class VC(object):
         with torch.no_grad():
             logits = model.extract_features(**inputs)
             feats = model.final_proj(logits[0]) if version == "v1" else logits[0]
-        if protect < 0.5 and pitch != None and pitchf != None:
+        if protect < 0.5 and pitch is not None and pitchf is not None:
             feats0 = feats.clone()
         if (
             isinstance(index, type(None)) == False
@@ -434,7 +434,7 @@ class VC(object):
             )
 
         feats = F.interpolate(feats.permute(0, 2, 1), scale_factor=2).permute(0, 2, 1)
-        if protect < 0.5 and pitch != None and pitchf != None:
+        if protect < 0.5 and pitch is not None and pitchf is not None:
             feats0 = F.interpolate(feats0.permute(0, 2, 1), scale_factor=2).permute(
                 0, 2, 1
             )
@@ -442,11 +442,11 @@ class VC(object):
         p_len = audio0.shape[0] // self.window
         if feats.shape[1] < p_len:
             p_len = feats.shape[1]
-            if pitch != None and pitchf != None:
+            if pitch is not None and pitchf is not None:
                 pitch = pitch[:, :p_len]
                 pitchf = pitchf[:, :p_len]
 
-        if protect < 0.5 and pitch != None and pitchf != None:
+        if protect < 0.5 and pitch is not None and pitchf is not None:
             pitchff = pitchf.clone()
             pitchff[pitchf > 0] = 1
             pitchff[pitchf < 1] = protect
@@ -455,7 +455,7 @@ class VC(object):
             feats = feats.to(feats0.dtype)
         p_len = torch.tensor([p_len], device=self.device).long()
         with torch.no_grad():
-            if pitch != None and pitchf != None:
+            if pitch is not None and pitchf is not None:
                 audio1 = (
                     (net_g.infer(feats, p_len, pitch, pitchf, sid)[0][0, 0])
                     .data.cpu()

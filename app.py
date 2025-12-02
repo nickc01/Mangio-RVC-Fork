@@ -47,7 +47,7 @@ def get_vc(sid):
     global n_spk, tgt_sr, net_g, vc, cpt, version
     if sid == "" or sid == []:
         global hubert_model
-        if hubert_model != None:  # 考虑到轮询, 需要加个判断看是否 sid 是由有模型切换到无模型的
+        if hubert_model is not None:  # 考虑到轮询, 需要加个判断看是否 sid 是由有模型切换到无模型的
             print("clean_empty_cache")
             del net_g, n_spk, vc, hubert_model, tgt_sr  # ,cpt
             hubert_model = net_g = n_spk = vc = hubert_model = tgt_sr = None
@@ -147,7 +147,7 @@ def vc_single(
         if audio_max > 1:
             audio /= audio_max
         times = [0, 0, 0]
-        if hubert_model == None:
+        if hubert_model is None:
             load_hubert()
         if_f0 = cpt.get("f0", 1)
         file_index = (

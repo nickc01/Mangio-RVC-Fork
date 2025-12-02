@@ -83,7 +83,7 @@ class Config:
             x_center = 38
             x_max = 41
 
-        if self.gpu_mem != None and self.gpu_mem <= 4:
+        if self.gpu_mem is not None and self.gpu_mem <= 4:
             x_pad = 1
             x_query = 5
             x_center = 30
@@ -145,7 +145,7 @@ def vc_single(sid, input_audio, f0_up_key, f0_file, f0_method, file_index, index
     f0_up_key = int(f0_up_key)
     audio = load_audio(input_audio, 16000)
     times = [0, 0, 0]
-    if hubert_model == None:
+    if hubert_model is None:
         load_hubert()
     if_f0 = cpt.get("f0", 1)
     # audio_opt=vc.pipeline(hubert_model,net_g,sid,audio,times,f0_up_key,f0_method,file_index,file_big_npy,index_rate,if_f0,f0_file=f0_file)

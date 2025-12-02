@@ -76,6 +76,11 @@ try:
         if DoFormant.lower() == "true"
         else (False if DoFormant.lower() == "false" else DoFormant)
     )(DoFormant)
+    Quefrency = float(Quefrency)
+    Timbre = float(Timbre)
+    # Clamp values to slider bounds (0.0 to 16.0)
+    Quefrency = max(0.0, min(16.0, Quefrency))
+    Timbre = max(0.0, min(16.0, Timbre))
 except (ValueError, TypeError, IndexError):
     DoFormant, Quefrency, Timbre = False, 1.0, 1.0
     CSVutil("csvdb/formanting.csv", "w+", "formanting", DoFormant, Quefrency, Timbre)
@@ -251,7 +256,7 @@ def vc_single(
     crepe_hop_length,
 ):  # spk_item, input_audio0, vc_transform0,f0_file,f0method0
     global tgt_sr, net_g, vc, hubert_model, version
-    if input_audio_path0 is None or input_audio_path0 is None:
+    if input_audio_path0 is None and input_audio_path1 is None:
         return "You need to upload an audio", None
     f0_up_key = int(f0_up_key)
     try:
@@ -321,7 +326,7 @@ def vc_single(
     except:
         info = traceback.format_exc()
         print(info)
-        return info, (None, None)
+        return info, None
 
 
 def vc_multi(
@@ -488,7 +493,7 @@ def uvr(model_name, inp_root, save_root_vocal, paths, save_root_ins, agg, format
 # 一个选项卡全局只能有一个音色
 def get_vc(sid, to_return_protect0, to_return_protect1):
     global n_spk, tgt_sr, net_g, vc, cpt, version
-    if sid == "" or sid == []:
+    if sid is None or sid == "" or sid == []:
         global hubert_model
         if hubert_model is not None:  # 考虑到轮询, 需要加个判断看是否 sid 是由有模型切换到无模型的
             print("clean_empty_cache")
@@ -589,12 +594,12 @@ def change_choices():
     return (
         {"choices": sorted(names), "__type__": "update"},
         {"choices": sorted(index_paths), "__type__": "update"},
-        {"choices": sorted(audio_paths), "__type__": "update"},
+        {"__type__": "update"},  # Audio component doesn't support choices
     )
 
 
 def clean():
-    return {"value": "", "__type__": "update"}
+    return {"value": None, "__type__": "update"}
 
 
 sr_dict = {
@@ -631,6 +636,12 @@ def if_done_multi(done, ps):
 def formant_enabled(
     cbox, qfrency, tmbre, frmntapply, formantpreset, formant_refresh_button
 ):
+    print(f"[DEBUG] formant_enabled called with:")
+    print(f"  cbox={cbox}, type={type(cbox)}")
+    print(f"  qfrency={qfrency}, type={type(qfrency)}")
+    print(f"  tmbre={tmbre}, type={type(tmbre)}")
+    print(f"  formantpreset={formantpreset}, type={type(formantpreset)}")
+
     if cbox:
         DoFormant = True
         CSVutil("csvdb/formanting.csv", "w+", "formanting", DoFormant, qfrency, tmbre)
@@ -639,8 +650,8 @@ def formant_enabled(
 
         return (
             {"value": True, "__type__": "update"},
-            {"visible": True, "__type__": "update"},
-            {"visible": True, "__type__": "update"},
+            {"visible": True, "value": qfrency, "__type__": "update"},
+            {"visible": True, "value": tmbre, "__type__": "update"},
             {"visible": True, "__type__": "update"},
             {"visible": True, "__type__": "update"},
             {"visible": True, "__type__": "update"},
@@ -653,8 +664,8 @@ def formant_enabled(
         # print(f"is checked? - {cbox}\ngot {DoFormant}")
         return (
             {"value": False, "__type__": "update"},
-            {"visible": False, "__type__": "update"},
-            {"visible": False, "__type__": "update"},
+            {"visible": False, "value": qfrency, "__type__": "update"},
+            {"visible": False, "value": tmbre, "__type__": "update"},
             {"visible": False, "__type__": "update"},
             {"visible": False, "__type__": "update"},
             {"visible": False, "__type__": "update"},
@@ -1729,13 +1740,21 @@ def cli_extract_model(com):
 
 
 def preset_apply(preset, qfer, tmbr):
-    if str(preset) != "":
+    print(f"[DEBUG] preset_apply called with preset={preset}, qfer={qfer}, tmbr={tmbr}")
+    if preset is not None and str(preset) != "":
         with open(str(preset), "r") as p:
             content = p.readlines()
-            qfer, tmbr = content[0].split("\n")[0], content[1]
+            # Strip all whitespace including \r\n and convert to float
+            qfer = float(content[0].strip())
+            tmbr = float(content[1].strip())
+            # Clamp values to slider bounds (0.0 to 16.0)
+            qfer = max(0.0, min(16.0, qfer))
+            tmbr = max(0.0, min(16.0, tmbr))
+            print(f"[DEBUG] After loading preset: qfer={qfer}, tmbr={tmbr}")
             formant_apply(qfer, tmbr)
     else:
         pass
+    print(f"[DEBUG] Returning qfer={qfer}, tmbr={tmbr}")
     return (
         {"value": qfer, "__type__": "update"},
         {"value": tmbr, "__type__": "update"},
@@ -1994,6 +2013,121 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Mangio-RVC-Web 💻") as app:
         )
     )
     with gr.Tabs():
+        with gr.TabItem("Simple Model Inference"):
+            with gr.Group():
+                gr.Markdown("**Simplified voice conversion interface with essential controls only.**")
+
+                with gr.Row():
+                    simple_sid = gr.Dropdown(
+                        label="Select Voice Model",
+                        choices=sorted(names),
+                        value="",
+                        interactive=True
+                    )
+                    simple_refresh = gr.Button("Refresh", variant="primary")
+
+                with gr.Row():
+                    with gr.Column():
+                        simple_transpose = gr.Number(
+                            label="Transpose (semitones, +12 for male→female, -12 for female→male)",
+                            value=0
+                        )
+                        simple_audio_file = gr.Audio(
+                            label="Upload Audio File",
+                            type="filepath"
+                        )
+
+                    with gr.Column():
+                        simple_f0method = gr.Radio(
+                            label="Pitch Extraction Algorithm",
+                            choices=["pm", "harvest", "dio", "crepe", "crepe-tiny", "mangio-crepe", "mangio-crepe-tiny", "rmvpe"],
+                            value="rmvpe",
+                            interactive=True
+                        )
+
+                simple_convert_btn = gr.Button("Convert", variant="primary", size="lg")
+
+                with gr.Row():
+                    simple_output_info = gr.Textbox(label="Output Info")
+                    simple_output_audio = gr.Audio(label="Output Audio")
+
+                # Hidden components needed for model loading and default parameters
+                simple_spk_item = gr.Slider(
+                    minimum=0,
+                    maximum=2333,
+                    step=1,
+                    value=0,
+                    visible=False,
+                    interactive=False
+                )
+                simple_protect0 = gr.Slider(
+                    minimum=0,
+                    maximum=0.5,
+                    value=0.33,
+                    visible=False,
+                    interactive=False
+                )
+                simple_protect1 = gr.Slider(
+                    minimum=0,
+                    maximum=0.5,
+                    value=0.33,
+                    visible=False,
+                    interactive=False
+                )
+                simple_input_audio0 = gr.Textbox(value="", visible=False)
+                simple_f0_file = gr.File(visible=False)
+                simple_file_index1 = gr.Textbox(value="", visible=False)
+                simple_file_index2 = gr.Textbox(value="", visible=False)
+                simple_index_rate = gr.Slider(value=0.75, visible=False, minimum=0, maximum=1)
+                simple_filter_radius = gr.Slider(value=3, visible=False, minimum=0, maximum=7)
+                simple_resample_sr = gr.Slider(value=0, visible=False, minimum=0, maximum=48000)
+                simple_rms_mix_rate = gr.Slider(value=0.25, visible=False, minimum=0, maximum=1)
+                simple_crepe_hop_length = gr.Slider(value=120, visible=False, minimum=1, maximum=512)
+
+            # Wire up the simple refresh button - only update the dropdown
+            simple_refresh.click(
+                fn=lambda: change_choices()[0],  # Only get the first return value (names)
+                inputs=[],
+                outputs=[simple_sid]
+            )
+
+            # Load model when voice is selected - wrap to keep sliders hidden
+            def simple_load_model(sid, p0, p1):
+                spk_item, protect0, protect1 = get_vc(sid, p0, p1)
+                # Keep all sliders hidden and non-interactive
+                spk_item["visible"] = False
+                protect0["visible"] = False
+                protect1["visible"] = False
+                return spk_item, protect0, protect1
+
+            simple_sid.change(
+                fn=simple_load_model,
+                inputs=[simple_sid, simple_protect0, simple_protect1],
+                outputs=[simple_spk_item, simple_protect0, simple_protect1]
+            )
+
+            # Wire up the convert button
+            simple_convert_btn.click(
+                fn=vc_single,
+                inputs=[
+                    simple_spk_item,
+                    simple_input_audio0,
+                    simple_audio_file,
+                    simple_transpose,
+                    simple_f0_file,
+                    simple_f0method,
+                    simple_file_index1,
+                    simple_file_index2,
+                    simple_index_rate,
+                    simple_filter_radius,
+                    simple_resample_sr,
+                    simple_rms_mix_rate,
+                    simple_protect0,
+                    simple_crepe_hop_length,
+                ],
+                outputs=[simple_output_info, simple_output_audio]
+            )
+
         with gr.TabItem(i18n("模型推理")):
             # Inference Preset Row
             # with gr.Row():
@@ -2035,23 +2169,12 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Mangio-RVC-Web 💻") as app:
                             label=i18n("变调(整数, 半音数量, 升八度12降八度-12)"), value=0
                         )
                         input_audio0 = gr.Textbox(
-                            label=i18n(
-                                "Add audio's name to the path to the audio file to be processed (default is the correct format example) Remove the path to use an audio from the dropdown list:"
-                            ),
-                            value=os.path.abspath(os.getcwd()).replace("\\", "/")
-                            + "/audios/"
-                            + "audio.wav",
-                        )
-                        input_audio1 = gr.Dropdown(
-                            label=i18n(
-                                "Auto detect audio path and select from the dropdown:"
-                            ),
-                            choices=sorted(audio_paths),
                             value="",
-                            interactive=True,
+                            visible=False
                         )
-                        input_audio1.change(
-                            fn=lambda: "", inputs=[], outputs=[input_audio0]
+                        input_audio1 = gr.Audio(
+                            label=i18n("Upload Audio File"),
+                            type="filepath"
                         )
                         f0method0 = gr.Radio(
                             label=i18n(
@@ -2160,7 +2283,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Mangio-RVC-Web 💻") as app:
                         )
 
                         formant_preset = gr.Dropdown(
-                            value="",
+                            value=None,
                             choices=get_fshift_presets(),
                             label="browse presets for formanting",
                             visible=bool(DoFormant),
@@ -2391,6 +2514,81 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Mangio-RVC-Web 💻") as app:
                 inputs=[sid0, protect0, protect1],
                 outputs=[spk_item, protect0, protect1],
             )
+
+        with gr.TabItem("Model Upload"):
+            with gr.Group():
+                gr.Markdown("**Upload an RVC model ZIP file**\n\nUpload a ZIP containing .pth and .index files. The files will be extracted to the correct locations.")
+
+                upload_zip = gr.File(
+                    label="Upload Model ZIP",
+                    file_types=[".zip"],
+                    type="filepath"
+                )
+                upload_btn = gr.Button("Extract and Install Model", variant="primary", size="lg")
+                upload_output = gr.Textbox(label="Status", lines=5)
+
+            def extract_model_zip(zip_path):
+                import zipfile
+                import shutil
+
+                if not zip_path:
+                    return "Please upload a ZIP file first."
+
+                try:
+                    status_msg = []
+                    status_msg.append(f"Processing: {os.path.basename(zip_path)}")
+
+                    # Create temp extraction directory
+                    temp_dir = os.path.join(os.getcwd(), "temp_model_extract")
+                    os.makedirs(temp_dir, exist_ok=True)
+
+                    # Extract ZIP
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(temp_dir)
+                    status_msg.append(f"✓ Extracted ZIP to temp directory")
+
+                    # Find .pth and .index files
+                    pth_files = []
+                    index_files = []
+
+                    for root, dirs, files in os.walk(temp_dir):
+                        for file in files:
+                            if file.endswith('.pth'):
+                                pth_files.append(os.path.join(root, file))
+                            elif file.endswith('.index'):
+                                index_files.append(os.path.join(root, file))
+
+                    status_msg.append(f"✓ Found {len(pth_files)} .pth file(s) and {len(index_files)} .index file(s)")
+
+                    # Copy files to correct locations
+                    for pth_file in pth_files:
+                        dest = os.path.join(weight_root, os.path.basename(pth_file))
+                        shutil.copy2(pth_file, dest)
+                        status_msg.append(f"✓ Copied {os.path.basename(pth_file)} to weights/")
+
+                    for index_file in index_files:
+                        dest = os.path.join(index_root, os.path.basename(index_file))
+                        shutil.copy2(index_file, dest)
+                        status_msg.append(f"✓ Copied {os.path.basename(index_file)} to logs/")
+
+                    # Cleanup
+                    shutil.rmtree(temp_dir)
+                    status_msg.append("\n✅ Model installed successfully!")
+                    status_msg.append("Click 'Refresh' in the inference tabs to see the new model.")
+
+                    return "\n".join(status_msg)
+
+                except zipfile.BadZipFile:
+                    return "❌ Error: Invalid ZIP file"
+                except Exception as e:
+                    return f"❌ Error: {str(e)}"
+
+            upload_btn.click(
+                fn=extract_model_zip,
+                inputs=[upload_zip],
+                outputs=[upload_output]
+            )
+
         with gr.TabItem(i18n("伴奏人声分离&去混响&去回声")):
             with gr.Group():
                 gr.Markdown(
@@ -2409,53 +2607,94 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Mangio-RVC-Web 💻") as app:
                         "3、个人推荐的最干净的配置是先MDX-Net再DeEcho-Aggressive。"
                     )
                 )
+                uvr_audio_input = gr.Audio(
+                    label="Upload Audio File",
+                    type="filepath"
+                )
+
                 with gr.Row():
-                    with gr.Column():
-                        dir_wav_input = gr.Textbox(
-                            label=i18n("输入待处理音频文件夹路径"),
-                            value=((os.getcwd()).replace("\\", "/") + "/audios/"),
-                        )
-                        wav_inputs = gr.File(
-                            file_count="multiple", label=i18n("也可批量输入音频文件, 二选一, 优先读文件夹")
-                        )  #####
-                    with gr.Column():
-                        model_choose = gr.Dropdown(label=i18n("模型"), choices=uvr5_names)
-                        agg = gr.Slider(
-                            minimum=0,
-                            maximum=20,
-                            step=1,
-                            label="人声提取激进程度",
-                            value=10,
-                            interactive=True,
-                            visible=False,  # 先不开放调整
-                        )
-                        opt_vocal_root = gr.Textbox(
-                            label=i18n("指定输出主人声文件夹"), value="opt"
-                        )
-                        opt_ins_root = gr.Textbox(
-                            label=i18n("指定输出非主人声文件夹"), value="opt"
-                        )
-                        format0 = gr.Radio(
-                            label=i18n("导出文件格式"),
-                            choices=["wav", "flac", "mp3", "m4a"],
-                            value="flac",
-                            interactive=True,
-                        )
-                    but2 = gr.Button(i18n("转换"), variant="primary")
-                    vc_output4 = gr.Textbox(label=i18n("输出信息"))
-                    but2.click(
-                        uvr,
-                        [
-                            model_choose,
-                            dir_wav_input,
-                            opt_vocal_root,
-                            wav_inputs,
-                            opt_ins_root,
-                            agg,
-                            format0,
-                        ],
-                        [vc_output4],
+                    uvr_model_choose = gr.Dropdown(
+                        label="Model",
+                        choices=uvr5_names if uvr5_names else ["No models found - add .pth files to uvr5_weights/"],
+                        value=uvr5_names[0] if uvr5_names else None,
+                        interactive=bool(uvr5_names)
                     )
+                    uvr_refresh_models = gr.Button("Refresh Models", variant="secondary")
+
+                uvr_process_btn = gr.Button("Process Audio", variant="primary", size="lg")
+
+                with gr.Row():
+                    uvr_output_vocal = gr.Audio(label="Output: Vocals/Processed")
+                    uvr_output_inst = gr.Audio(label="Output: Instrumental/Residual")
+
+                uvr_output_info = gr.Textbox(label="Status", lines=3)
+
+            def refresh_uvr_models():
+                models = []
+                try:
+                    for name in os.listdir(weight_uvr5_root):
+                        if name.endswith(".pth") or "onnx" in name:
+                            models.append(name.replace(".pth", ""))
+                except:
+                    pass
+
+                if not models:
+                    return {"choices": ["No models found - add .pth files to uvr5_weights/"], "value": None, "__type__": "update"}
+                return {"choices": models, "value": models[0], "__type__": "update"}
+
+            def process_uvr_audio(audio_path, model_name):
+                if not audio_path:
+                    return None, None, "Please upload an audio file first."
+
+                if not model_name or "No models found" in model_name:
+                    return None, None, "Please add UVR5 models to the uvr5_weights/ folder first."
+
+                try:
+                    import tempfile
+                    import shutil
+
+                    # Create temp directories
+                    temp_input_dir = tempfile.mkdtemp()
+                    temp_vocal_dir = tempfile.mkdtemp()
+                    temp_inst_dir = tempfile.mkdtemp()
+
+                    # Copy audio file to temp input directory (uvr processes all files in a directory)
+                    audio_filename = os.path.basename(audio_path)
+                    temp_audio_path = os.path.join(temp_input_dir, audio_filename)
+                    shutil.copy2(audio_path, temp_audio_path)
+
+                    # Run UVR processing
+                    result = None
+                    for msg in uvr(model_name, temp_input_dir, temp_vocal_dir, None, temp_inst_dir, 10, "wav"):
+                        result = msg
+
+                    # Find output files
+                    vocal_files = [f for f in os.listdir(temp_vocal_dir) if f.endswith('.wav')]
+                    inst_files = [f for f in os.listdir(temp_inst_dir) if f.endswith('.wav')]
+
+                    vocal_path = os.path.join(temp_vocal_dir, vocal_files[0]) if vocal_files else None
+                    inst_path = os.path.join(temp_inst_dir, inst_files[0]) if inst_files else None
+
+                    # Clean up temp input directory
+                    shutil.rmtree(temp_input_dir, ignore_errors=True)
+
+                    return vocal_path, inst_path, result or "Processing complete!"
+
+                except Exception as e:
+                    import traceback
+                    return None, None, f"Error: {str(e)}\n\n{traceback.format_exc()}"
+
+            uvr_refresh_models.click(
+                fn=refresh_uvr_models,
+                inputs=[],
+                outputs=[uvr_model_choose]
+            )
+
+            uvr_process_btn.click(
+                fn=process_uvr_audio,
+                inputs=[uvr_audio_input, uvr_model_choose],
+                outputs=[uvr_output_vocal, uvr_output_inst, uvr_output_info]
+            )
         with gr.TabItem(i18n("训练")):
             gr.Markdown(
                 value=i18n(
@@ -3082,9 +3321,9 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Mangio-RVC-Web 💻") as app:
     if (
         config.iscolab or config.paperspace
     ):  # Share gradio link for colab and paperspace (FORK FEATURE)
-        app.queue(concurrency_count=511, max_size=1022).launch(share=True)
+        app.queue().launch(share=True)
     else:
-        app.queue(concurrency_count=511, max_size=1022).launch(
+        app.queue().launch(
             server_name="0.0.0.0",
             inbrowser=not config.noautoopen,
             server_port=config.listen_port,

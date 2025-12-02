@@ -62,9 +62,9 @@ class _audio_pre_:
                     X_wave[d],
                     _,
                 ) = librosa.core.load(  # 理论上librosa读取可能对某些音频有bug，应该上ffmpeg读取，但是太麻烦了弃坑
-                    music_file,
-                    bp["sr"],
-                    False,
+                    path=music_file,
+                    sr=bp["sr"],
+                    mono=False,
                     dtype=np.float32,
                     res_type=bp["res_type"],
                 )
@@ -229,9 +229,9 @@ class _audio_pre_new:
                     X_wave[d],
                     _,
                 ) = librosa.core.load(  # 理论上librosa读取可能对某些音频有bug，应该上ffmpeg读取，但是太麻烦了弃坑
-                    music_file,
-                    bp["sr"],
-                    False,
+                    path=music_file,
+                    sr=bp["sr"],
+                    mono=False,
                     dtype=np.float32,
                     res_type=bp["res_type"],
                 )
